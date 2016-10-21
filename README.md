@@ -39,7 +39,7 @@ param|type|description
 path|TEXT|full path in system format 
 type|INT32|hash algorithm
 format|TEXT|output format
-method|INT32|(optional)callback method
+method|INT32|(optional) callback method
 hash|TEXT|hash (empty if aborted)
 
 ###Syntax for callback method
@@ -57,3 +57,30 @@ $0|BOOL|```True``` to abort
 * The callback method is called by its method ID. If a method name is passed, but a corresponding method is not found, EXECUTE METHOD is used internally. This can be useful, for example, if the callback method is a shared component method.
 
 * The callback method is called in the process which called the plugin.
+
+Example
+---
+
+```
+PID:=Progress New 
+Progress SET PROGRESS (PID;-1)
+Progress SET BUTTON ENABLED (PID;True)
+
+$path:=System folder(Desktop)+"openssl-OpenSSL_1_1_0-stable.zip"
+
+$callbackMethod:="PROGRESS"
+
+$hash:=Generate checksum ($path;Checksum MD5;Checksum Format Base64;$callbackMethod)
+
+Progress QUIT (PID)
+
+If ($hash#"")
+
+  ALERT($hash)
+
+Else 
+
+  ALERT("Aborted!")
+
+End if 
+```
