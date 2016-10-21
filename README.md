@@ -56,6 +56,4 @@ $0|BOOL|```True``` to abort
 
 * The callback method is called by its method ID. If a method name is passed, but a corresponding method is not found, EXECUTE METHOD is used internally. This can be useful, for example, if the callback method is a shared component method.
 
-* The callback method is called in the same process as the plugin function.
-
-
+* The callback method is called in the process which called the plugin.
