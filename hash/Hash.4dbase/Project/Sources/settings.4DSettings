@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?><preferences stamp="5">
+	<com.4d>
+		<database>
+			<cache adaptative="false" flush_buffer_delay="15s" size_fixed="200" size_maximum="100" size_reserved="128"/>
+			<misc standard_xpath="false" non_blocking_printing="false" legacy_print_rendering="true"/>
+		</database>
+		<interface>
+			<misc/>
+		</interface>
+		<server>
+			<misc/>
+			<network>
+				<options use_legacy_network_layer="false"/>
+				<client_server use_encryption="false"/>
+			</network>
+		</server>
+		<web>
+			<standalone_server>
+				<configuration allow_ssl="false" publish_at_startup="false" session_mode="2" automatic_session_management="true"/>
+				<options>
+					<web_processes timeout_for_inactives="5"/>
+					<cache use_4d_web_cache="false"/>
+					<filters allow_4dsync_urls="false"/>
+				</options>
+				<misc/>
+			</standalone_server>
+			<remote>
+				<options>
+					<web_processes timeout_for_inactives="5"/>
+					<cache use_4d_web_cache="false"/>
+					<filters allow_4dsync_urls="true"/>
+				</options>
+				<configuration session_mode="2" automatic_session_management="true"/>
+				<misc/>
+			</remote>
+		</web>
+		<general>
+			<mover always_display_dialog="2"/>
+		</general>
+		<compiler>
+			<typage default_for_button="2" default_for_numeric="1"/>
+			<options fat_binary="true" compilation_path="1"/>
+		</compiler>
+	</com.4d>
+</preferences>
