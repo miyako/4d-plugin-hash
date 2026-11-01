@@ -119,29 +119,23 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams)
 	
 	unsigned int type = Param2.getIntValue();
 	const EVP_MD *evp;
-	uint32_t mlen;
-	
+
 	switch (type)
 	{
   case Checksum_SHA1:
 			evp = EVP_sha1();
-			mlen = 20;
 			break;
   case Checksum_SHA256:
 			evp = EVP_sha256();
-			mlen = 32;
 			break;
   case Checksum_SHA384:
 			evp = EVP_sha384();
-			mlen = 48;
 			break;
   case Checksum_SHA512:
 			evp = EVP_sha512();
-			mlen = 64;
 			break;
   default:
 			evp = EVP_md5();
-			mlen = 16;
 			break;
 	}
 	
@@ -181,8 +175,9 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams)
 
 		if((buf) && (c) && (EVP_DigestInit_ex(c, evp, NULL)))
 		{
-			unsigned int mdlen = mlen;
+			unsigned int mdlen = 0;
 			bool aborted = false;
+			bool failed = false;
 
 			/* call the progress method at most every CALLBACK_INTERVAL_MS, not on every read */
 			std::chrono::steady_clock::time_point lastCallback = std::chrono::steady_clock::now();
@@ -191,7 +186,11 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams)
 			while ((len = fread (buf, 1, BUFFER_SIZE, f)) != 0)
 			{
 				PA_YieldAbsolute();
-				EVP_DigestUpdate(c, buf, len);
+				if(!EVP_DigestUpdate(c, buf, len))
+				{
+					failed = true;
+					break;
+				}
 				pos += len;
 
 				std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
@@ -207,7 +206,8 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams)
 			}
 
 			/* fread returns 0 on error as well as EOF; don't return a digest of partial data */
-			bool failed = (ferror(f) != 0);
+			if(ferror(f))
+				failed = true;
 
 			/* always report completion */
 			if((!aborted) && (!failed) && (pos != lastCallbackPos))
@@ -215,12 +215,12 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams)
 
 			if((!aborted) && (!failed))
 			{
-				uint8_t *md = (uint8_t *)calloc(mlen, sizeof(uint8_t));
+				unsigned char md[EVP_MAX_MD_SIZE];
 
 				if(EVP_DigestFinal_ex(c, md, &mdlen))
 				{
 					C_BLOB temp;
-					temp.setBytes((const uint8_t *)md, mlen);
+					temp.setBytes((const uint8_t *)md, mdlen);
 					switch (format)
 					{
 						case Checksum_Format_Base64:
@@ -231,8 +231,6 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams)
 							break;
 					}
 				}
-
-				free(md);
 			}
 		}
 
