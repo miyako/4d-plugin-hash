@@ -24,4 +24,5 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams);
 
 typedef unsigned int method_id_t;
 
-#define BUFFER_SIZE 8192
+#define BUFFER_SIZE (1024 * 1024)
+#define CALLBACK_INTERVAL_MS 100

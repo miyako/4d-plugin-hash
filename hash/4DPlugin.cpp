@@ -14,6 +14,10 @@
 
 #include "openssl/evp.h"
 
+#include <chrono>
+#include <sys/types.h>
+#include <sys/stat.h>
+
 void PluginMain(PA_long32 selector, PA_PluginParameters params)
 {
 	try
@@ -61,7 +65,9 @@ bool Execute_method(size_t pos, size_t total, method_id_t methodId, const PA_Uni
 		
 		if(PA_GetVariableKind(result) == eVK_Boolean)
 			shouldAbort = PA_GetBooleanVariable(result);
-		
+
+		/* the method may return text, blob, picture, etc. */
+		PA_ClearVariable(&result);
 		PA_ClearVariable(&params[0]);
 		PA_ClearVariable(&params[1]);
 	}else
@@ -113,7 +119,7 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams)
 	
 	unsigned int type = Param2.getIntValue();
 	const EVP_MD *evp;
-	uint32_t mlen, len;
+	uint32_t mlen;
 	
 	switch (type)
 	{
@@ -143,56 +149,100 @@ void Generate_checksum(sLONG_PTR *pResult, PackagePtr pParams)
 	const PA_Unichar *methodName = Param4.getUTF16Length() ? Param4.getUTF16StringPtr() : NULL;
 	method_id_t methodId = PA_GetMethodID((PA_Unichar *)Param4.getUTF16StringPtr());
 	
+	/* stat before fopen: fopen blocks on a fifo, and a device never reaches EOF */
 #if VERSIONMAC
-	FILE *f = fopen ((const char *)path.c_str(), "rb");
+	struct stat st;
+	bool isFile = (stat((const char *)path.c_str(), &st) == 0) && S_ISREG(st.st_mode);
 #else
-	FILE *f = _wfopen ((const wchar_t *)path.c_str(), L"rb");
+	struct _stat64 st;
+	bool isFile = (_wstat64((const wchar_t *)path.c_str(), &st) == 0) && ((st.st_mode & _S_IFMT) == _S_IFREG);
 #endif
+
+	FILE *f = NULL;
+
+	if(isFile)
+	{
+#if VERSIONMAC
+		f = fopen ((const char *)path.c_str(), "rb");
+#else
+		f = _wfopen ((const wchar_t *)path.c_str(), L"rb");
+#endif
+	}
+
 	if(f)
 	{
-		fseek(f, 0L, SEEK_END);
-		size_t total = (size_t)ftell(f);
+		/* st_size is 64-bit on both platforms; ftell returns a 32-bit long on Windows */
+		size_t total = (size_t)st.st_size;
 		size_t pos = 0;
-		
-		fseek(f, 0L, SEEK_SET);
-		unsigned char buf[BUFFER_SIZE];
+		size_t len;
+
+		unsigned char *buf = (unsigned char *)malloc(BUFFER_SIZE);
 		EVP_MD_CTX* c = EVP_MD_CTX_create();
-		EVP_MD_CTX_init(c);
-		EVP_DigestInit(c, evp);
-		uint32_t mdlen = mlen;
-		bool aborted = false;
-		
-		while ((len = fread (buf, 1, BUFFER_SIZE, f)) != 0)
+
+		if((buf) && (c) && (EVP_DigestInit_ex(c, evp, NULL)))
 		{
-			PA_YieldAbsolute();
-			EVP_DigestUpdate(c, buf, len);
-			pos += len;
-			aborted = Execute_method(pos, total, methodId, methodName);
-			
-			if(aborted)
-				break;
-		}
-		
-		if(!aborted)
-		{
-			uint8_t *md = (uint8_t *)calloc(mlen, sizeof(uint8_t));
-			EVP_DigestFinal(c, md, &mdlen);
-			
-			C_BLOB temp;
-			temp.setBytes((const uint8_t *)md, mlen);
-			switch (format)
+			unsigned int mdlen = mlen;
+			bool aborted = false;
+
+			/* call the progress method at most every CALLBACK_INTERVAL_MS, not on every read */
+			std::chrono::steady_clock::time_point lastCallback = std::chrono::steady_clock::now();
+			size_t lastCallbackPos = 0;
+
+			while ((len = fread (buf, 1, BUFFER_SIZE, f)) != 0)
 			{
-				case Checksum_Format_Base64:
-					temp.toB64Text(&returnValue);
-					break;
-				default:
-					temp.toHexText(&returnValue);
-					break;
+				PA_YieldAbsolute();
+				EVP_DigestUpdate(c, buf, len);
+				pos += len;
+
+				std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+				if((now - lastCallback) >= std::chrono::milliseconds(CALLBACK_INTERVAL_MS))
+				{
+					lastCallback = now;
+					lastCallbackPos = pos;
+					aborted = Execute_method(pos, total, methodId, methodName);
+
+					if(aborted)
+						break;
+				}
 			}
-			
-			free(md);
+
+			/* fread returns 0 on error as well as EOF; don't return a digest of partial data */
+			bool failed = (ferror(f) != 0);
+
+			/* always report completion */
+			if((!aborted) && (!failed) && (pos != lastCallbackPos))
+				aborted = Execute_method(pos, total, methodId, methodName);
+
+			if((!aborted) && (!failed))
+			{
+				uint8_t *md = (uint8_t *)calloc(mlen, sizeof(uint8_t));
+
+				if(EVP_DigestFinal_ex(c, md, &mdlen))
+				{
+					C_BLOB temp;
+					temp.setBytes((const uint8_t *)md, mlen);
+					switch (format)
+					{
+						case Checksum_Format_Base64:
+							temp.toB64Text(&returnValue);
+							break;
+						default:
+							temp.toHexText(&returnValue);
+							break;
+					}
+				}
+
+				free(md);
+			}
 		}
-		
+
+		/* EVP_MD_CTX_destroy also cleans up the digest state when aborted */
+		if(c)
+			EVP_MD_CTX_destroy(c);
+
+		if(buf)
+			free(buf);
+
 		fclose(f);
 	}
 	
