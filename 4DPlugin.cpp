@@ -75,7 +75,8 @@ bool Execute_method(size_t pos, size_t total, method_id_t methodId, const PA_Uni
 	if(methodName)
 	{
 		PA_Variable	params[4];
-		params[0] = PA_CreateVariable(eVK_Unistring);
+		/* PA_SetStringVariable is shallow: eVK_Unistring would leak an empty string */
+		params[0] = PA_CreateVariable(eVK_Undefined);
 		PA_Unistring _methodName = PA_CreateUnistring((PA_Unichar *)methodName);
 		PA_SetStringVariable(&params[0], &_methodName);
 		params[1] = PA_CreateVariable(eVK_Boolean);
